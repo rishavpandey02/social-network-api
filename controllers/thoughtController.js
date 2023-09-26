@@ -1,138 +1,113 @@
-const { User, Thought } = require('../models');
+const Models = require("../models");
+const Person = Models.User;
+const Idea = Models.Thought;
 
-module.exports = {
+const ThoughtHandlers = {
 
-    getThoughts(req, res) {
-        Thought.find().then((thought) => res.json(thought))
-        .catch((err) => {
-            console.log("error", err);
-        res.status(200).json(err)});
-    },
+  fetchAllIdeas(req, res) {
+    Idea.find({})
+      .then(ideaList => res.json(ideaList))
+      .catch(err => res.status(500).json(err));
+  },
 
-    getSingleThought(req, res) {
-        Thought.findOne({
-            _id: req.params.userId
-        })
-        .select("-__v")
-        .then((thought) => 
-        !thought ? res.status(404).json({message: "No thoughts found with this certain ID"})
-        : res.json(thought)
-        )
-        .catch((err) => res.status(500).json(err));
-    },
-
-    createThought(req, res) {
-        Thought.create(req.body).then(( data ) => {
-            return User.findOneAndUpdate(
-                {
-                    _id: req.body.userId
-                },
-                { 
-                    $push:{ thoughts:{_id}} 
-                },
-                {
-                    new:true
-                }
-            );
-        })
-        .then((thought) => 
-        !thought ? res.status(404).json({ message: "No user found with this certain ID" })
-        :res.json(thought)
-        )
-        .catch((err) => res.status(200).json(err));
-    },
-
-   updateThought(req, res) {
-    Thought.findOneAndUpdate(
-        {
-            _id: req.params.thoughtId
-        }, 
-        {
-            $set: req.body 
-        },
-        {
-            runValidators: true,
-            New: true
+  fetchIdeaById(req, res) {
+    const ideaId = req.params.ideaId;
+    Idea.findById(ideaId)
+      .select("-__v")
+      .then(singleIdea => {
+        if (!singleIdea) {
+          res.status(404).json({ note: "Cannot locate Idea by ID." });
+        } else {
+          res.json(singleIdea);
         }
-    )
-    .then((user) =>
-    !user?  res.status(404).json({message:"No thought found with that id."}) 
-    : res.json(user)
-    )
-    .catch((err) => res.status(500).json(err));
-   },
+      })
+      .catch(err => res.status(500).json(err));
+  },
 
-   deleteThought(req, res) {
-    Thought.findOneAndDelete({
-        _id: req.params.userId
-    })
-    .then((thought) =>
-    !thought ? res.status(404).json({message:"No thoughts found via ID"})
-    : User.findOneAndUpdate(
-        {
-            thoughts: req.params.thoughtId
-        },
-        {
-           $pull: { 
-            thoughts: req.params.thoughtId
-           } 
-        },
-        {
-            new: true
+  generateNewIdea(req, res) {
+    Idea.create(req.body)
+      .then(({ _id }) => {
+        return Person.findByIdAndUpdate(
+          req.body.personId,
+          { $addToSet: { ideas: _id } },
+          { new: true }
+        );
+      })
+      .then(associatedIdea => {
+        if (!associatedIdea) {
+          res.status(404).json({ note: "Cannot locate User by ID." });
+        } else {
+          res.json(associatedIdea);
         }
-    )
-    )
-    .then((user) => 
-    !user ? res.status(404).json({message: "Though has been deleted but user is not found"})
-    : res.json({ message: "Thought deleted"})
-    )
-    .catch((err) => res.status(500).json(err));
-   },
+      })
+      .catch(err => res.status(500).json(err));
+  },
 
-   addReaction(req, res) {
-    Thought.findOneAndUpdate(
-        {
-            _id: req.params.thoughtId
-        },
-        {
-            $addToSet: {
-                reactions: req.body
-            }
-        },
-        {
-            runValidators:true,
-            new: true
+  reviseIdea(req, res) {
+    Idea.findByIdAndUpdate(
+      req.params.ideaId,
+      { $set: req.body },
+      { runValidators: true, new: true }
+    )
+      .then(updatedIdea => {
+        if (!updatedIdea) {
+          res.status(404).json({ note: "Cannot locate Idea by ID." });
+        } else {
+          res.json(updatedIdea);
         }
-    )
-    .then((thought) =>
-    !thought
-    ?res.status(404).json({message: 'No thought with that id'})
-    : res.json(thought)
-    )
-    .catch((err) => res.status(500).json(err));
-   },
+      })
+      .catch(err => res.status(500).json(err));
+  },
 
-   deleteReaction(req, res) {
-    Thought.findOneAndUpdate(
-        {
-            _id: req.params.thoughtId
-        },
-        {
-            $pull:{
-                reactions:{
-                    reactionId:req.params.reactionId
-                }
-            }
-        },
-        {
-            runValidators: true,
-            new: true
+  eradicateIdea(req, res) {
+    Idea.findByIdAndRemove(req.params.ideaId)
+      .then(removedIdea => {
+        if (!removedIdea) {
+          res.status(404).json({ note: "Cannot locate Idea by ID." });
+        } else {
+          return Person.updateOne(
+            { ideas: req.params.ideaId },
+            { $pull: { ideas: req.params.ideaId } },
+            { new: true }
+          );
         }
+      })
+      .then(result => res.json({ note: "Idea and associations updated." }))
+      .catch(err => res.status(500).json(err));
+  },
+
+  addFeedback(req, res) {
+    Idea.findByIdAndUpdate(
+      req.params.ideaId,
+      { $addToSet: { feedbacks: req.body } },
+      { runValidators: true, new: true }
     )
-    .then((thought) => 
-    !thought ? res.status(404).json({message:"No thoughts find through ID"})
-    : res.json(thought)
+      .then(updatedIdea => {
+        if (!updatedIdea) {
+          res.status(404).json({ note: "Cannot locate Idea by ID." });
+        } else {
+          res.json(updatedIdea);
+        }
+      })
+      .catch(err => res.status(500).json(err));
+  },
+
+  removeFeedback(req, res) {
+    Idea.findByIdAndUpdate(
+      req.params.ideaId,
+      { $pull: { feedbacks: { feedbackId: req.params.feedbackId } } },
+      { runValidators: true, new: true }
     )
-    .catch((err) => res.status(500).json(err));
-   },
+      .then(updatedIdea => {
+        if (!updatedIdea) {
+          res.status(404).json({ note: "Cannot locate Idea by ID." });
+        } else {
+          res.json(updatedIdea);
+        }
+      })
+      .catch(err => res.status(500).json(err));
+  },
+
 };
+
+module.exports = ThoughtHandlers;
